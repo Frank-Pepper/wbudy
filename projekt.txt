@@ -1,0 +1,24 @@
+Grupa: G08
+Członkowie:
+	Franciszek Pietrzycki - lider
+	Jan Rzepkowski
+	Daniil Shostsik
+
+Urządzanie: LPC 1769 F
+
+Temat projektu: budzik
+
+Funkcjonalności:
+
+OLED
+Zegar RTC
+Timer
+Głośnik/dźwięk
+GPIO joystick
+I2c i/f do 5
+Akcelerometr gasi alarm (i2c)
+Termometr (czujnik)
+Eeprom do zapisu alarmu
+
+Checkpoint:
+Wyświetlenie na ekranie godziny, minuty, sekundy.

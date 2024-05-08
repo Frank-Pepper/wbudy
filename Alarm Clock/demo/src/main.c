@@ -7,7 +7,6 @@
 #include "lpc17xx_clkpwr.h"
 #include "stdio.h"
 #include "oled.h"
-#include "time.h"
 
 /* Funkcje inicjalizujące */
 static void init_i2c(void);
@@ -15,43 +14,47 @@ static void init_ssp(void);
 static void setUpRTC(void);
 static void oled_setup(void);
 static void init_Timer(void);
-void TIMER0_IRQHandler(void);
 
 /* Zmienne do przechowywania aktualnego czasu */
-volatile uint8_t godziny = 0;
-volatile uint8_t minuty = 0;
-volatile uint8_t sekundy = 0;
+volatile uint32_t godziny = 0;
+volatile uint32_t minuty = 0;
+volatile uint32_t sekundy = 0;
 
-//#define USE_MESSAGES
+/* Zmienne do przechowywania czasu budzika */
+volatile uint32_t alarm_godziny = 0;
+volatile uint32_t alarm_minuty = 0;
+volatile uint32_t alarm_sekundy = 0;
+
+/* Zmienna do przechowywania stanu menu */
+volatile uint8_t menu_state = 0;
 
 int main(void) {
     init_i2c();
     init_ssp();
+    setUpRTC();
     oled_setup();
     init_Timer();
-    char czas[9];
-    oled_putString(1, 1, (uint8_t *) "Czas:", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-    setUpRTC();
-#ifdef USE_MESSAGES
-    time_t seconds;
-        struct tm *timeStruct;
-        seconds = time(NULL);
-        timeStruct = localtime(&seconds);
-        timeStruct->tm_hour += 2;
-        godziny = timeStruct->tm_hour;
-        minuty = timeStruct->tm_min;
-        sekundy = timeStruct->tm_sec;
-
-//        printf("Current time : %d:%d:%d\n", timeStruct->tm_hour, timeStruct->tm_min, timeStruct->tm_sec);
-#endif
 
     while(1) {
-        // Aktualizacja czasu na ekranie OLED
-        snprintf(czas, sizeof(czas), "%02d:%02d:%02d", godziny, minuty, sekundy);
-//        printf("value of a_static: %s\n", czas);
-        TIMER0_IRQHandler();
-        uint8_t * temp = (uint8_t *) czas;
-        oled_putString(1, 20, temp, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+        if (menu_state < 3) {
+            // W normalnym trybie wyświetlania czasu
+            oled_putString(1, 1, "Czas:", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+            char czas[9];
+            snprintf(czas, sizeof(czas), "%02d:%02d:%02d", godziny, minuty, sekundy);
+            oled_putString(1, 20, czas, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+            oled_putString(1, 30, "R - ustaw budzik", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+        } else {
+            // W menu ustawiania budzika
+            oled_putString(1, 1, "Ustaw budzik:", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+            char alarm[9];
+            snprintf(alarm, sizeof(alarm), "%02d:%02d:%02d", alarm_godziny, alarm_minuty, alarm_sekundy);
+            oled_putString(1, 20, alarm, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+            oled_putString(1, 30, "U - zwieksz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+            oled_putString(1, 40, "D - zmniejsz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+            oled_putString(1, 50, "R - zatwierdz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+        }
+
+        handle_joystick(); // Obsługa joysticka
     }
 }
 
@@ -99,18 +102,6 @@ static void setUpRTC(void) {
     RTC_Init(LPC_RTC);
     RTC_ResetClockTickCounter(LPC_RTC);
     RTC_Cmd(LPC_RTC, ENABLE);
-
-    RTC_TIME_Type RTCFullTime;
-    RTCFullTime.HOUR = 4;
-    RTCFullTime.MIN = 20;
-    RTCFullTime.SEC = 0;
-    RTC_SetFullTime(LPC_RTC, &RTCFullTime);
-    RTC_GetFullTime(LPC_RTC, &RTCFullTime);
-    godziny = RTCFullTime.HOUR;
-    minuty = RTCFullTime.MIN;
-    sekundy = RTCFullTime.SEC;
-
-
 }
 
 /* Inicjalizacja wyświetlacza OLED */
@@ -125,7 +116,7 @@ static void init_Timer(void) {
     TIM_MATCHCFG_Type Match_Cfg;
 
     Config.PrescaleOption = TIM_PRESCALE_USVAL;
-    Config.PrescaleValue = 1000; // Prescaler 1, co sekundę
+    Config.PrescaleValue = 1000000; // Prescaler 1, co sekundę
 
     TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &Config);
 
@@ -134,7 +125,7 @@ static void init_Timer(void) {
     Match_Cfg.ResetOnMatch = TRUE;
     Match_Cfg.StopOnMatch = FALSE;
     Match_Cfg.MatchChannel = 0;
-    Match_Cfg.MatchValue = 1000; // 1 sekunda
+    Match_Cfg.MatchValue = 1000000; // 1 sekunda
     TIM_ConfigMatch(LPC_TIM0, &Match_Cfg);
 
     TIM_Cmd(LPC_TIM0, ENABLE);
@@ -158,6 +149,44 @@ void TIMER0_IRQHandler(void) {
                     godziny = 0;
                 }
             }
+        }
+        // Sprawdzenie, czy aktualny czas odpowiada czasowi budzika
+        if (godziny == alarm_godziny && minuty == alarm_minuty && sekundy == alarm_sekundy) {
+            // Wywołanie alarmu
+            oled_putString(1, 40, "Wakey, wakey!", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+        }
+    }
+}
+
+/* Funkcja do obsługi joysticka */
+void handle_joystick(void) {
+    uint8_t joystick_state = GPIO_ReadValue(1);
+
+    if (joystick_state & (1 << 23)) { // Joystick w górę
+        if (menu_state == 0) alarm_godziny = (alarm_godziny + 1) % 24;
+        else if (menu_state == 1) alarm_minuty = (alarm_minuty + 1) % 60;
+        else if (menu_state == 2) alarm_sekundy = (alarm_sekundy + 1) % 60;
+        else if (menu_state == 3) {
+            // W menu ustawiania budzika, joystick w górę zwiększa wartość aktualnie ustawianego pola
+            if (alarm_godziny < 23) alarm_godziny++;
+            else if (alarm_minuty < 59) alarm_minuty++;
+            else if (alarm_sekundy < 59) alarm_sekundy++;
+        }
+    } else if (joystick_state & (1 << 24)) { // Joystick w dół
+        if (menu_state == 0) alarm_godziny = (alarm_godziny - 1) % 24;
+        else if (menu_state == 1) alarm_minuty = (alarm_minuty - 1) % 60;
+        else if (menu_state == 2) alarm_sekundy = (alarm_sekundy - 1) % 60;
+        else if (menu_state == 3) {
+            // W menu ustawiania budzika, joystick w dół zmniejsza wartość aktualnie ustawianego pola
+            if (alarm_godziny > 0) alarm_godziny--;
+            else if (alarm_minuty > 0) alarm_minuty--;
+            else if (alarm_sekundy > 0) alarm_sekundy--;
+        }
+    } else if (joystick_state & (1 << 25)) { // Joystick w prawo
+        if (menu_state < 3) menu_state = (menu_state + 1) % 4;
+        else {
+            // W menu ustawiania budzika, joystick w prawo zatwierdza ustawienia i wraca do normalnego trybu wyświetlania czasu
+            menu_state = 0;
         }
     }
 }

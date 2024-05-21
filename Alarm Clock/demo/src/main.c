@@ -12,6 +12,7 @@
 #include "oled.h"
 #include "time.h"
 #include "acc.h"
+#include "temp.h"
 
 
 /* Funkcje inicjalizujące */
@@ -20,6 +21,7 @@ static void init_ssp(void);
 static void setUpRTC(void);
 static void oled_setup(void);
 static void init_Timer(void);
+void handle_joystick(void);
 
 /* Zmienne do przechowywania aktualnego czasu */
 volatile uint8_t godziny = 0;
@@ -38,14 +40,9 @@ volatile uint8_t edit_mode = 0;
 volatile uint8_t prev_mode = 0;
 volatile uint8_t btn1 = 1;
 
-volatile uint8_t xoff = 0;
-volatile uint8_t yoff = 0;
-volatile uint8_t zoff = 0;
-volatile uint8_t x = 0;
-volatile uint8_t y = 0;
-volatile uint8_t z = 0;
+volatile int32_t temp;
 
-volatile uint8_t margin = 5;
+const uint8_t margin = 5;
 
 int main(void) {
     init_i2c();
@@ -55,9 +52,13 @@ int main(void) {
     init_Timer();
 
     joystick_init();
+    acc_init();
+//    if (SysTick_Config(SystemCoreClock / 1000)) {
+//    	while(1); // error
+//    }
+//
+//    temp_init(&getTicks);
 
-
-	acc_read(&x, &y, &z);
 
     while(1) {
     	if (edit_mode != prev_mode) {
@@ -66,36 +67,49 @@ int main(void) {
     	}
         if (!edit_mode) {
             // W normalnym trybie wyświetlania czasu
-            oled_putString(1, 1, "Czas:", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+            oled_putString(1, 1, (uint8_t *) "Czas:", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
             char czas[9];
             snprintf(czas, sizeof(czas), "%02d:%02d:%02d", godziny, minuty, sekundy);
-            oled_putString(1, 20, czas, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-            oled_putString(1, 40, "R - ustaw budzik", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+            oled_putString(1, 20, (uint8_t *) czas, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+            oled_putString(1, 40, (uint8_t *) "R - ustaw budzik", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
             snprintf(czas, sizeof(czas), "%02d:%02d:%02d", alarm_godziny, alarm_minuty, alarm_sekundy);
-            oled_putString(1, 50, czas, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+            oled_putString(1, 50, (uint8_t *) czas, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+//            temp = temp_read();
         } else {
             // W menu ustawiania budzika
-            oled_putString(1, 1, "Ustaw budzik:", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+            oled_putString(1, 1, (uint8_t *) "Ustaw budzik:", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
             char alarm[9];
             snprintf(alarm, sizeof(alarm), "%02d:%02d:%02d", alarm_godziny, alarm_minuty, alarm_sekundy);
-            oled_putString(1, 20, alarm, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-            oled_putString(1, 30, "U - zwieksz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-            oled_putString(1, 40, "D - zmniejsz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-            oled_putString(1, 50, "R - zatwierdz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+            oled_putString(1, 20, (uint8_t *) alarm, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+            oled_putString(1, 30, (uint8_t *) "U - zwieksz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+            oled_putString(1, 40, (uint8_t *) "D - zmniejsz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+            oled_putString(1, 50, (uint8_t *) "R - zatwierdz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
         }
         // Sprawdzenie, czy aktualny czas odpowiada czasowi budzika
         if (godziny == alarm_godziny && minuty == alarm_minuty && sekundy == alarm_sekundy) {
             // Wywołanie alarmu
+        	// accelerometr coordynaty
+        	int8_t x;
+        	int8_t y;
+        	int8_t z;
+        	int8_t xoff;
+        	int8_t yoff;
+        	int8_t zoff;
+        	int8_t xdiff;
+        	int8_t ydiff;
+        	int8_t zdiff;
         	acc_read(&x, &y, &z);
-        	xoff = x;
-			yoff = y;
-			zoff = z;
         	while(1){
-				oled_putString(1, 40, "Wakey, wakey!", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+				oled_putString(1, 40, (uint8_t *) "Wakey, wakey!", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 				oled_clearScreen(OLED_COLOR_BLACK);
-				acc_read(&x, &y, &z);
+				acc_read(&xoff, &yoff, &zoff);
+				xdiff = xoff - x;
+				ydiff = yoff - y;
+				zdiff = zoff - z;
 //				btn1 = ((GPIO_ReadValue(0) >> 4) & 0x01);
-				if( -margin < x - xoff && x - xoff < margin && -margin < y - yoff && y - yoff < margin && -margin < z - zoff < margin) {
+				if(!(-margin < xdiff && xdiff < margin && -margin < ydiff && ydiff < margin && -margin < zdiff && zdiff < margin)) {
+					edit_mode = 0;
+					prev_mode = 1;
 					break;
 				}
         	}

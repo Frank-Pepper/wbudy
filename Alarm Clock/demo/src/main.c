@@ -44,6 +44,16 @@ volatile int32_t temp;
 
 const uint8_t margin = 5;
 
+volatile uint32_t msTicks; /* counts 1ms timeTicks */
+
+void SysTick_Handler(void) {
+    msTicks++;
+}
+
+uint32_t getTicks(void) {
+    return msTicks;
+}
+
 int main(void) {
     init_i2c();
     init_ssp();
@@ -53,11 +63,11 @@ int main(void) {
 
     joystick_init();
     acc_init();
-//    if (SysTick_Config(SystemCoreClock / 1000)) {
-//    	while(1); // error
-//    }
-//
-//    temp_init(&getTicks);
+    if (SysTick_Config(SystemCoreClock / 1000)) {
+        while(1); // error
+    }
+
+    temp_init(&getTicks);
 
 
     while(1) {
@@ -74,7 +84,13 @@ int main(void) {
             oled_putString(1, 40, (uint8_t *) "R - ustaw budzik", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
             snprintf(czas, sizeof(czas), "%02d:%02d:%02d", alarm_godziny, alarm_minuty, alarm_sekundy);
             oled_putString(1, 50, (uint8_t *) czas, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-//            temp = temp_read();
+
+            // Read and display temperature
+            temp = temp_read();
+            char temperatura[10];
+            snprintf(temperatura, sizeof(temperatura), "Temp: %d", temp / 10);
+            oled_putString(1, 60, (uint8_t *) temperatura, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+
         } else {
             // W menu ustawiania budzika
             oled_putString(1, 1, (uint8_t *) "Ustaw budzik:", OLED_COLOR_WHITE, OLED_COLOR_BLACK);

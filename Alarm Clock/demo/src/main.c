@@ -246,11 +246,11 @@ const uint8_t margin = 5;
 
 volatile uint32_t msTicks; /* counts 1ms timeTicks */
 
-void SysTick_Handler(void) {
+static void SysTick_Handler(void) {
     msTicks++;
 }
 
-uint32_t getTicks(void) {
+static uint32_t getTicks(void) {
     return msTicks;
 }
 
@@ -273,32 +273,11 @@ static void setUpRTC(void) {
     sekundy = RTCFullTime.SEC;
 }
 
-/* Obsługa przerwania od Timera 0 */
-void TIMER0_IRQHandler(void) {
-    if (TIM_GetIntStatus(LPC_TIM0, TIM_MR0_INT)) {
-        TIM_ClearIntPending(LPC_TIM0, TIM_MR0_INT);
-        sekundy++; // Zwiększenie sekund
-
-        // Aktualizacja minut i godzin w zależności od upływu czasu
-        if (sekundy >= 60) {
-            sekundy = 0;
-            minuty++;
-            if (minuty >= 60) {
-                minuty = 0;
-                godziny++;
-                if (godziny >= 24) {
-                    godziny = 0;
-                }
-            }
-        }
-    }
-}
-
 /* Funkcja do obsługi joysticka */
-void handle_joystick(void) {
+static void handle_joystick(void) {
     //uint8_t joystick_state = GPIO_ReadValue(1);
 	uint8_t read_position =  joystick_read();
-	if (read_position == 0){
+	if (!read_position){
 		return;
 	}
 	joystick_state = read_position;
@@ -307,28 +286,34 @@ void handle_joystick(void) {
 	}
 	if (edit_mode) {
 		if (joystick_state & JOYSTICK_UP) { // Joystick w górę
-			if (menu_state == 0) alarm_godziny = (alarm_godziny + 1) % 24;
-			else if (menu_state == 1) alarm_minuty = (alarm_minuty + 1) % 60;
-			else if (menu_state == 2) alarm_sekundy = (alarm_sekundy + 1) % 60;
-//			else if (menu_state == 3) {
-//				// W menu ustawiania budzika, joystick w górę zwiększa wartość aktualnie ustawianego pola
-//				if (alarm_godziny < 23) alarm_godziny++;
-//				else if (alarm_minuty < 59) alarm_minuty++;
-//				else if (alarm_sekundy < 59) alarm_sekundy++;
-//			}
+			if (!menu_state) {
+                alarm_godziny = (uint8_t)((alarm_godziny + (uint8_t)(1)) % (uint8_t)(24));
+            }
+			else if (menu_state == (uint8_t)(1)) {
+                alarm_minuty = (uint8_t)((alarm_minuty + (uint8_t)(1)) % (uint8_t)(60));
+            }
+			else if (menu_state == (uint8_t)(2)) {
+                alarm_sekundy = (uint8_t)((alarm_sekundy + (uint8_t)(1)) % (uint8_t)(60));
+            }
 		} else if (joystick_state & JOYSTICK_DOWN) { // Joystick w dół
-			if (menu_state == 0) alarm_godziny = alarm_godziny == 0 ? 23 : alarm_godziny - 1;
-			else if (menu_state == 1) alarm_minuty = alarm_minuty == 0 ? 59 : alarm_minuty - 1;
-			else if (menu_state == 2) alarm_sekundy = alarm_sekundy == 0 ? 59 : alarm_sekundy - 1;
+			if (menu_state == (uint8_t)(0)) {
+                alarm_godziny = (alarm_godziny == (uint8_t)(0)) ? (uint8_t)(23) : (uint8_t) (alarm_godziny - (uint8_t)(1));
+            }
+			else if (menu_state == (uint8_t)(1)) {
+                alarm_minuty = (alarm_minuty == (uint8_t)(0)) ? (uint8_t)(59) : (uint8_t) (alarm_minuty - (uint8_t)(1));
+            }
+			else if (menu_state == (uint8_t)(2)) {
+                alarm_sekundy = (alarm_sekundy == (uint8_t)(0)) ? (uint8_t)(59) : (uint8_t) (alarm_sekundy - (uint8_t)(1));
+            }
 		} else if (joystick_state & JOYSTICK_RIGHT) { // Joystick w prawo
-			menu_state = (menu_state + 1) % 3;
+			menu_state = (uint8_t)((menu_state + (uint8_t)(1)) % (uint8_t)(3));
 //			if (menu_state < 3) menu_state = (menu_state + 1) % 3;
 //			else {
 //				// W menu ustawiania budzika, joystick w prawo zatwierdza ustawienia i wraca do normalnego trybu wyświetlania czasu
 //				menu_state = 0;
 //			}
 		} else if (joystick_state & JOYSTICK_LEFT) { // Joystick w prawo
-			menu_state = (menu_state - 1) % 3;
+			menu_state = (uint8_t)((menu_state - (uint8_t)(1)) % (uint8_t)(3));
 //			if (menu_state > 0) menu_state = (menu_state - 1) % 3;
 //			else {
 //				// W menu ustawiania budzika, joystick w prawo zatwierdza ustawienia i wraca do normalnego trybu wyświetlania czasu
@@ -390,7 +375,7 @@ int main (void) {
 		if (!edit_mode) {
 			// W normalnym trybie wyświetlania czasu
 			// Read and display temperature
-			if (msTicks % 10 == 0)
+			if ((msTicks % 10) == 0)
 			{
 				temp = temp_read();
 			}
@@ -406,22 +391,22 @@ int main (void) {
 			char czas[20];
 			snprintf(czas, sizeof(czas), "Czas: %02d:%02d:%02d", godziny, minuty, sekundy);
 			oled_putString(1, 1, (uint8_t *) czas, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-			oled_putString(1, 40, (uint8_t *) "R - ustaw budzik", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			oled_putString(1, 40, (const uint8_t *) "R - ustaw budzik", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 			snprintf(czas, sizeof(czas), "%02d:%02d:%02d", alarm_godziny, alarm_minuty, alarm_sekundy);
 			oled_putString(1, 50, (uint8_t *) czas, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 
 		} else {
 			// W menu ustawiania budzika
-			oled_putString(1, 1, (uint8_t *) "Ustaw budzik:", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			oled_putString(1, 1, (const uint8_t *) "Ustaw budzik:", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 			char alarm[9];
 			snprintf(alarm, sizeof(alarm), "%02d:%02d:%02d", alarm_godziny, alarm_minuty, alarm_sekundy);
 			oled_putString(1, 20, (uint8_t *) alarm, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-			oled_putString(1, 30, (uint8_t *) "U - zwieksz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-			oled_putString(1, 40, (uint8_t *) "D - zmniejsz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-			oled_putString(1, 50, (uint8_t *) "R - zatwierdz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			oled_putString(1, 30, (const uint8_t *) "U - zwieksz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			oled_putString(1, 40, (const uint8_t *) "D - zmniejsz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			oled_putString(1, 50, (const uint8_t *) "R - zatwierdz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 		}
 		// Sprawdzenie, czy aktualny czas odpowiada czasowi budzika
-		if (RTC_GetTime(LPC_RTC, RTC_TIMETYPE_HOUR) == alarm_godziny && RTC_GetTime(LPC_RTC, RTC_TIMETYPE_MINUTE) == alarm_minuty && RTC_GetTime(LPC_RTC, RTC_TIMETYPE_SECOND) == alarm_sekundy) {
+		if ((RTC_GetTime(LPC_RTC, RTC_TIMETYPE_HOUR) == alarm_godziny) && (RTC_GetTime(LPC_RTC, RTC_TIMETYPE_MINUTE) == alarm_minuty) && (RTC_GetTime(LPC_RTC, RTC_TIMETYPE_SECOND) == alarm_sekundy)) {
 			// Wywołanie alarmu
 			// accelerometr coordynaty
 			int8_t x;
@@ -435,17 +420,17 @@ int main (void) {
 			int8_t zdiff;
 			acc_read(&x, &y, &z);
 			oled_clearScreen(OLED_COLOR_BLACK);
-			oled_putString(1, 40, (uint8_t *) "Wakey, wakey!", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			oled_putString(1, 40, (const uint8_t *) "Wakey, wakey!", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 			playSong(song);
 			while(1){
-				oled_putString(1, 40, (uint8_t *) "Wakey, wakey!", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+				oled_putString(1, 40, (const uint8_t *) "Wakey, wakey!", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
 				oled_clearScreen(OLED_COLOR_BLACK);
 				acc_read(&xoff, &yoff, &zoff);
 				xdiff = xoff - x;
 				ydiff = yoff - y;
 				zdiff = zoff - z;
 //				btn1 = ((GPIO_ReadValue(0) >> 4) & 0x01);
-				if(!(-margin < xdiff && xdiff < margin && -margin < ydiff && ydiff < margin && -margin < zdiff && zdiff < margin)) {
+				if(!((-margin < xdiff) && (xdiff < margin) && (-margin < ydiff) && (ydiff < margin) && (-margin < zdiff) && (zdiff < margin))) {
 					edit_mode = 0;
 					prev_mode = 1;
 					break;

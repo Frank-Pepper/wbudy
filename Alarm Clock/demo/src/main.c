@@ -246,11 +246,11 @@ const uint8_t margin = 5;
 
 volatile uint32_t msTicks; /* counts 1ms timeTicks */
 
-static void SysTick_Handler(void) {
+void SysTick_Handler(void) {
     msTicks++;
 }
 
-static uint32_t getTicks(void) {
+uint32_t getTicks(void) {
     return msTicks;
 }
 

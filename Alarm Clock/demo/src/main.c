@@ -18,6 +18,8 @@
 #include "lpc17xx_clkpwr.h"
 #include "time.h"
 #include "temp.h"
+#include "light.h"
+#include "eeprom.h"
 
 #include "joystick.h"
 #include "acc.h"
@@ -258,19 +260,20 @@ uint32_t getTicks(void) {
 
 /* Inicjalizacja RTC */
 static void setUpRTC(void) {
+
     RTC_Init(LPC_RTC);
     RTC_ResetClockTickCounter(LPC_RTC);
     RTC_Cmd(LPC_RTC, ENABLE);
 
     RTC_TIME_Type RTCFullTime;
-    RTCFullTime.HOUR = 4;
-    RTCFullTime.MIN = 20;
-    RTCFullTime.SEC = 0;
+    readTimeFromEEPROM(&RTCFullTime);
+//    RTCFullTime.HOUR = 4;
+//    RTCFullTime.MIN = 20;
+//    RTCFullTime.SEC = 0;
     RTC_SetFullTime(LPC_RTC, &RTCFullTime);
     RTC_GetFullTime(LPC_RTC, &RTCFullTime);
-    godziny = RTCFullTime.HOUR;
-    minuty = RTCFullTime.MIN;
-    sekundy = RTCFullTime.SEC;
+
+    saveTimeToEEPROM(&RTCFullTime);
 }
 
 /* Funkcja do obsługi joysticka */
@@ -323,6 +326,90 @@ static void handle_joystick(void) {
     }
 }
 
+void saveTimeToEEPROM(const RTC_TIME_Type *rtc) {
+	uint8_t buf[3];
+	buf[0] = rtc->SEC;
+	buf[1] = rtc->MIN;
+	buf[2] = rtc->HOUR;
+	eeprom_write(buf, 0, 3);
+}
+
+void readTimeFromEEPROM(RTC_TIME_Type *rtc) {
+	uint8_t buf[3];
+	eeprom_read(buf, 0, 3);
+	rtc->SEC = buf[0];
+	rtc->MIN = buf[1];
+	rtc->HOUR = buf[2];
+}
+
+void saveAlarmToEEPROM(uint8_t hours,  uint8_t minutes, uint8_t seconds) {
+	uint8_t buf[3];
+	buf[0] = hours;
+	buf[1] = minutes;
+	buf[2] = seconds;
+	eeprom_write(buf, 3, 3);
+}
+
+//void readAlarmFromEEPROM(uint8_t *hours, uint8_t *minutes, uint8_t *seconds) {
+//
+//}
+
+uint32_t jasno;
+
+oled_color_t background = OLED_COLOR_BLACK;
+oled_color_t foreground = OLED_COLOR_WHITE;
+uint8_t prev_light = 0;
+uint8_t light_change = 0;
+
+static void setTime() {
+	uint8_t set_time = 0;
+	menu_state = 0;
+	uint8_t joystick_state;
+	uint8_t buff[20];
+	uint8_t g = RTC_GetTime(LPC_RTC, RTC_TIMETYPE_HOUR);
+	uint8_t m = RTC_GetTime(LPC_RTC, RTC_TIMETYPE_MINUTE);
+	uint8_t s = RTC_GetTime(LPC_RTC, RTC_TIMETYPE_SECOND);
+	oled_clearScreen(background);
+	while (!set_time) {
+		joystick_state = joystick_read();
+		if (joystick_state & JOYSTICK_UP) { // Joystick w górę
+			if (!menu_state) {
+				g = (uint8_t)((g + (uint8_t)(1)) % (uint8_t)(24));
+			}
+			else if (menu_state == (uint8_t)(1)) {
+				m = (uint8_t)((m + (uint8_t)(1)) % (uint8_t)(60));
+			}
+			else if (menu_state == (uint8_t)(2)) {
+				s = (uint8_t)((s + (uint8_t)(1)) % (uint8_t)(60));
+			}
+		} else if (joystick_state & JOYSTICK_DOWN) { // Joystick w dół
+			if (menu_state == (uint8_t)(0)) {
+				g = (g == (uint8_t)(0)) ? (uint8_t)(23) : (uint8_t) (g - (uint8_t)(1));
+			}
+			else if (menu_state == (uint8_t)(1)) {
+				m = (m == (uint8_t)(0)) ? (uint8_t)(59) : (uint8_t) (m - (uint8_t)(1));
+			}
+			else if (menu_state == (uint8_t)(2)) {
+				s = (s == (uint8_t)(0)) ? (uint8_t)(59) : (uint8_t) (s - (uint8_t)(1));
+			}
+		} else if (joystick_state & JOYSTICK_RIGHT) { // Joystick w prawo
+			menu_state = (uint8_t)((menu_state + (uint8_t)(1)) % (uint8_t)(3));
+		} else if (joystick_state & JOYSTICK_LEFT) { // Joystick w prawo
+			menu_state = (uint8_t)((menu_state - (uint8_t)(1)) % (uint8_t)(3));
+		}
+		snprintf(buff, sizeof(buff), "Ustaw: %02d:%02d:%02d", g, m, s);
+		oled_putString(1, 20, (uint8_t *) buff, foreground, background);
+		set_time = joystick_read() & JOYSTICK_CENTER;
+		Timer0_Wait(1);
+	}
+	RTC_TIME_Type RTCFullTime;
+	RTCFullTime.HOUR = g;
+	RTCFullTime.MIN = m;
+	RTCFullTime.SEC = s;
+	saveTimeToEEPROM(&RTCFullTime);
+	RTC_SetFullTime(LPC_RTC, &RTCFullTime);
+}
+
 
 
 int main (void) {
@@ -336,7 +423,13 @@ int main (void) {
     acc_init();
     oled_init();
 
+    eeprom_init();
+
     setUpRTC();
+
+    light_init();
+    light_enable();
+
 
     if (SysTick_Config(SystemCoreClock / 1000)) {
 		while(1); // error
@@ -362,14 +455,29 @@ int main (void) {
 
     uint8_t btn1 = ((GPIO_ReadValue(0) >> 4) & 0x01);
 
+	setTime();
     /* <---- Speaker ------ */
 
     oled_clearScreen(OLED_COLOR_BLACK);
 
 
     while (1) {
+    	jasno = light_read();
+    	if (jasno < 200) {
+    		background = OLED_COLOR_WHITE;
+    		foreground = OLED_COLOR_BLACK;
+    		light_change = 1;
+    	} else {
+    		background = OLED_COLOR_BLACK;
+    		foreground = OLED_COLOR_WHITE;
+    		light_change = 0;
+    	}
+    	if (light_change != prev_light) {
+    		oled_clearScreen(background);
+    		prev_light = light_change;
+    	}
     	if (edit_mode != prev_mode) {
-			oled_clearScreen(OLED_COLOR_BLACK);
+			oled_clearScreen(background);
 			prev_mode = edit_mode;
 		}
 		if (!edit_mode) {
@@ -386,24 +494,24 @@ int main (void) {
 
 			char temperatura[20];
 			snprintf(temperatura, sizeof(temperatura), "Temp: %d.%d", temp / 10, temp % 10);
-			oled_putString(1, 20, (uint8_t *) temperatura, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			oled_putString(1, 20, (uint8_t *) temperatura, foreground, background);
 
 			char czas[20];
 			snprintf(czas, sizeof(czas), "Czas: %02d:%02d:%02d", godziny, minuty, sekundy);
-			oled_putString(1, 1, (uint8_t *) czas, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-			oled_putString(1, 40, (const uint8_t *) "R - ustaw budzik", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			oled_putString(1, 1, (uint8_t *) czas, foreground, background);
+			oled_putString(1, 40, (const uint8_t *) "R - ustaw budzik", foreground, background);
 			snprintf(czas, sizeof(czas), "%02d:%02d:%02d", alarm_godziny, alarm_minuty, alarm_sekundy);
-			oled_putString(1, 50, (uint8_t *) czas, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			oled_putString(1, 50, (uint8_t *) czas, foreground, background);
 
 		} else {
 			// W menu ustawiania budzika
-			oled_putString(1, 1, (const uint8_t *) "Ustaw budzik:", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			oled_putString(1, 1, (const uint8_t *) "Ustaw budzik:", foreground, background);
 			char alarm[9];
 			snprintf(alarm, sizeof(alarm), "%02d:%02d:%02d", alarm_godziny, alarm_minuty, alarm_sekundy);
-			oled_putString(1, 20, (uint8_t *) alarm, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-			oled_putString(1, 30, (const uint8_t *) "U - zwieksz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-			oled_putString(1, 40, (const uint8_t *) "D - zmniejsz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-			oled_putString(1, 50, (const uint8_t *) "R - zatwierdz", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			oled_putString(1, 20, (uint8_t *) alarm, foreground, background);
+			oled_putString(1, 30, (const uint8_t *) "U - zwieksz", foreground, background);
+			oled_putString(1, 40, (const uint8_t *) "D - zmniejsz", foreground, background);
+			oled_putString(1, 50, (const uint8_t *) "R - zatwierdz", foreground, background);
 		}
 		// Sprawdzenie, czy aktualny czas odpowiada czasowi budzika
 		if ((RTC_GetTime(LPC_RTC, RTC_TIMETYPE_HOUR) == alarm_godziny) && (RTC_GetTime(LPC_RTC, RTC_TIMETYPE_MINUTE) == alarm_minuty) && (RTC_GetTime(LPC_RTC, RTC_TIMETYPE_SECOND) == alarm_sekundy)) {
@@ -419,12 +527,12 @@ int main (void) {
 			int8_t ydiff;
 			int8_t zdiff;
 			acc_read(&x, &y, &z);
-			oled_clearScreen(OLED_COLOR_BLACK);
-			oled_putString(1, 40, (const uint8_t *) "Wakey, wakey!", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+			oled_clearScreen(background);
+			oled_putString(1, 40, (const uint8_t *) "Wakey, wakey!", foreground, background);
 			playSong(song);
 			while(1){
-				oled_putString(1, 40, (const uint8_t *) "Wakey, wakey!", OLED_COLOR_WHITE, OLED_COLOR_BLACK);
-				oled_clearScreen(OLED_COLOR_BLACK);
+				oled_putString(1, 40, (const uint8_t *) "Wakey, wakey!", foreground, background);
+				oled_clearScreen(background);
 				acc_read(&xoff, &yoff, &zoff);
 				xdiff = xoff - x;
 				ydiff = yoff - y;
@@ -438,7 +546,7 @@ int main (void) {
 			}
 		}
 		handle_joystick(); // Obsługa joysticka
-        Timer0_Wait(1);
+//        Timer0_Wait(1);
     }
 
 }

@@ -5,7 +5,6 @@
  *   All rights reserved.
  *
  ******************************************************************************/
-#include <stdio.h>
 
 #include "lpc17xx_pinsel.h"
 #include "lpc17xx_gpio.h"
@@ -39,17 +38,18 @@ static void setUpRTC(void);
 
 static void setNewTime(uint8_t * time);
 static void setTime(void);
-static void setAlarm();
+static void setAlarm(void);
 static void handle_joystick(void);
 
 static void saveTimeToEEPROM(const RTC_TIME_Type *rtc);
 static void readTimeFromEEPROM(RTC_TIME_Type *rtc);
 static void saveAlarmToEEPROM(uint8_t hours,  uint8_t minutes, uint8_t seconds);
-static void readAlarmFromEEPROM();
+static void readAlarmFromEEPROM(void);
 
 void SysTick_Handler(void);
 uint32_t getTicks(void);
 
+void check_failed(uint8_t *file, uint32_t line);
 
 static uint32_t notes[] = {
         2272, // A - 440 Hz
@@ -73,31 +73,20 @@ static uint8_t * song = (uint8_t*)"C2.C2,D4,C4,F4,E8,";
         //"D4,B4,B4,A4,A4,G4,E4,D4.D2,E4,E4,A4,F4,D8.D4,d4,d4,c4,c4,B4,G4,E4.E2,F4,F4,A4,A4,G8,";
 
 
-// /* Zmienne do przechowywania aktualnego czasu */
-// volatile uint8_t godziny = 0;
-// volatile uint8_t minuty = 0;
-// volatile uint8_t sekundy = 0;
+
 
 /* Zmienne do przechowywania czasu budzika */
-volatile uint8_t alarm_godziny = 4;
-volatile uint8_t alarm_minuty = 20;
-volatile uint8_t alarm_sekundy = 4;
+static uint8_t alarm_godziny = 4;
+static uint8_t alarm_minuty = 20;
+static uint8_t alarm_sekundy = 4;
 
-/* Zmienna do przechowywania stanu menu */
-// volatile uint8_t menu_state = 0;
-// volatile uint8_t joystick_state = 0;
-volatile uint8_t edit_mode = 0;
-// volatile uint8_t prev_mode = 0;
-// volatile uint8_t btn1 = 1;
 
-volatile int32_t temperature;
-
-const uint8_t MARGIN = 5;
+static bool edit_mode = false;
 
 volatile uint32_t msTicks; /* counts 1ms timeTicks */
 
-oled_color_t background = OLED_COLOR_BLACK;
-oled_color_t foreground = OLED_COLOR_WHITE;
+static oled_color_t background = OLED_COLOR_BLACK;
+static oled_color_t foreground = OLED_COLOR_WHITE;
 
 /*
 	OLED							+
@@ -116,9 +105,12 @@ oled_color_t foreground = OLED_COLOR_WHITE;
 
 int main (void) {
 	uint32_t lux_value;
-	uint8_t prev_mode = 0;
+	bool prev_mode = false;
 	uint8_t prev_light = 0;
 	uint8_t light_change = 0;
+	uint8_t print_value;
+	int32_t temperature;
+	const int8_t MARGIN = 5;
 
     init_i2c();
     init_ssp();
@@ -140,7 +132,9 @@ int main (void) {
 
 
     if (SysTick_Config(SystemCoreClock / 1000)) {
-		while(1); // error
+		while(1) {
+			/* error */
+		}
 	}
 
 	temp_init(&getTicks);
@@ -151,7 +145,7 @@ int main (void) {
 
     while (1) {
     	lux_value = light_read();
-    	if (lux_value < 200) {
+    	if (lux_value < (uint32_t) 200) {
     		background = OLED_COLOR_WHITE;
     		foreground = OLED_COLOR_BLACK;
     		light_change = 1;
@@ -171,7 +165,7 @@ int main (void) {
 		if (!edit_mode) {
 			// W normalnym trybie wyświetlania czasu
 			// Read and display temperature
-			if ((msTicks % 10) == 0)
+			if (!(msTicks % (uint8_t) 10))
 			{
 				temperature = temp_read();
 			}
@@ -181,27 +175,27 @@ int main (void) {
 			// sekundy = RTC_GetTime(LPC_RTC, RTC_TIMETYPE_SECOND);
 
 			char temperatura[20];
-			snprintf(temperatura, sizeof(temperatura), "Temp: %d.%d", (uint8_t ) (temperature / 10), (uint8_t ) (temperature % 10));
-			oled_putString(1, 20, (uint8_t *) temperatura, foreground, background);
+			print_value = snprintf(temperatura, sizeof(temperatura), "Temp: %d.%d", (int8_t) (temperature / 10), (int8_t) (temperature % 10));
+			oled_putString(1, 20, (const uint8_t *) temperatura, foreground, background);
 
 			char czas[20];
-			snprintf(czas, sizeof(czas), "Czas: %02d:%02d:%02d", (uint8_t ) RTC_GetTime(LPC_RTC, RTC_TIMETYPE_HOUR), (uint8_t ) RTC_GetTime(LPC_RTC, RTC_TIMETYPE_MINUTE), (uint8_t ) RTC_GetTime(LPC_RTC, RTC_TIMETYPE_SECOND));
-			oled_putString(1, 1, (uint8_t *) czas, foreground, background);
-			oled_putString(1, 40, (uint8_t *) "C - ustaw czas", foreground, background);
-			snprintf(czas, sizeof(czas), "Alarm: %02d:%02d:%02d", alarm_godziny, alarm_minuty, alarm_sekundy);
-			oled_putString(1, 50, (uint8_t *) czas, foreground, background);
+			print_value = snprintf(czas, sizeof(czas), "Czas: %02d:%02d:%02d", (uint8_t ) RTC_GetTime(LPC_RTC, RTC_TIMETYPE_HOUR), (uint8_t) RTC_GetTime(LPC_RTC, RTC_TIMETYPE_MINUTE), (uint8_t) RTC_GetTime(LPC_RTC, RTC_TIMETYPE_SECOND));
+			oled_putString(1, 1, (const uint8_t *) czas, foreground, background);
+			oled_putString(1, 40, (const uint8_t *) "C - ustaw czas", foreground, background);
+			print_value = snprintf(czas, sizeof(czas), "Alarm: %02d:%02d:%02d", alarm_godziny, alarm_minuty, alarm_sekundy);
+			oled_putString(1, 50, (const uint8_t *) czas, foreground, background);
 
 		} else {
 			// W menu ustawiania budzika
-			oled_putString(1, 1, (uint8_t *) "Ustaw czas:", foreground, background);
+			oled_putString(1, 1, (const uint8_t *) "Ustaw czas:", foreground, background);
 			char czas[20];
-			snprintf(czas, sizeof(czas), "Czas: %02d:%02d:%02d", (uint8_t ) RTC_GetTime(LPC_RTC, RTC_TIMETYPE_HOUR), (uint8_t ) RTC_GetTime(LPC_RTC, RTC_TIMETYPE_MINUTE), (uint8_t ) RTC_GetTime(LPC_RTC, RTC_TIMETYPE_SECOND));
-			oled_putString(1, 10, (uint8_t *) czas, foreground, background);
-			snprintf(czas, sizeof(czas), "Alarm: %02d:%02d:%02d", alarm_godziny, alarm_minuty, alarm_sekundy);
-			oled_putString(1, 20, (uint8_t *) czas, foreground, background);
+			print_value = snprintf(czas, sizeof(czas), "Czas: %02d:%02d:%02d", (uint8_t) RTC_GetTime(LPC_RTC, RTC_TIMETYPE_HOUR), (uint8_t) RTC_GetTime(LPC_RTC, RTC_TIMETYPE_MINUTE), (uint8_t) RTC_GetTime(LPC_RTC, RTC_TIMETYPE_SECOND));
+			oled_putString(1, 10, (const uint8_t *) czas, foreground, background);
+			print_value = snprintf(czas, sizeof(czas), "Alarm: %02d:%02d:%02d", alarm_godziny, alarm_minuty, alarm_sekundy);
+			oled_putString(1, 20, (const uint8_t *) czas, foreground, background);
 
-			oled_putString(1, 40, (uint8_t *) "L - alarm", foreground, background);
-			oled_putString(1, 50, (uint8_t *) "R - zegar", foreground, background);
+			oled_putString(1, 40, (const uint8_t *) "L - alarm", foreground, background);
+			oled_putString(1, 50, (const uint8_t *) "R - zegar", foreground, background);
 		}
 		// Sprawdzenie, czy aktualny czas odpowiada czasowi budzika
 		if ((RTC_GetTime(LPC_RTC, RTC_TIMETYPE_HOUR) == alarm_godziny) && (RTC_GetTime(LPC_RTC, RTC_TIMETYPE_MINUTE) == alarm_minuty) && (RTC_GetTime(LPC_RTC, RTC_TIMETYPE_SECOND) == alarm_sekundy)) {
@@ -218,19 +212,19 @@ int main (void) {
 			int8_t zdiff;
 			acc_read(&x, &y, &z);
 			oled_clearScreen(background);
-			oled_putString(1, 40, (uint8_t *) "Wakey, wakey!", foreground, background);
+			oled_putString(1, 40, (const uint8_t *) "Wakey, wakey!", foreground, background);
 			playSong(song);
 			while(1){
-				oled_putString(1, 40, (uint8_t *) "Wakey, wakey!", foreground, background);
+				oled_putString(1, 40, (const uint8_t *) "Wakey, wakey!", foreground, background);
 				oled_clearScreen(background);
 				acc_read(&xoff, &yoff, &zoff);
-				xdiff = xoff - x;
-				ydiff = yoff - y;
-				zdiff = zoff - z;
+				xdiff = (int8_t) (xoff - x);
+				ydiff = (int8_t) (yoff - y);
+				zdiff = (int8_t) (zoff - z);
 //				btn1 = ((GPIO_ReadValue(0) >> 4) & 0x01);
 				if(!((-MARGIN < xdiff) && (xdiff < MARGIN) && (-MARGIN < ydiff) && (ydiff < MARGIN) && (-MARGIN < zdiff) && (zdiff < MARGIN))) {
-					edit_mode = 0;
-					prev_mode = 1;
+					edit_mode = false;
+					prev_mode = true;
 					break;
 				}
 			}
@@ -246,7 +240,7 @@ static void setNewTime(uint8_t * time) {
 	uint8_t edit_position = 0;
 	uint8_t joystick_state;
 	char buff[20];
-	uint8_t position;
+	char position;
 	// uint8_t g = RTC_GetTime(LPC_RTC, RTC_TIMETYPE_HOUR);
 	// uint8_t m = RTC_GetTime(LPC_RTC, RTC_TIMETYPE_MINUTE);
 	// uint8_t s = RTC_GetTime(LPC_RTC, RTC_TIMETYPE_SECOND);
@@ -262,7 +256,7 @@ static void setNewTime(uint8_t * time) {
 			else if (edit_position == (uint8_t)(1)) {
 				m = (uint8_t)((m + (uint8_t)(1)) % (uint8_t)(60));
 			}
-			else if (edit_position == (uint8_t)(2)) {
+			else {
 				s = (uint8_t)((s + (uint8_t)(1)) % (uint8_t)(60));
 			}
 		} else if (joystick_state & JOYSTICK_DOWN) { // Joystick w dół
@@ -272,12 +266,12 @@ static void setNewTime(uint8_t * time) {
 			else if (edit_position == (uint8_t)(1)) {
 				m = (m == (uint8_t)(0)) ? (uint8_t)(59) : (uint8_t) (m - (uint8_t)(1));
 			}
-			else if (edit_position == (uint8_t)(2)) {
+			else {
 				s = (s == (uint8_t)(0)) ? (uint8_t)(59) : (uint8_t) (s - (uint8_t)(1));
 			}
 		} else if (joystick_state & JOYSTICK_RIGHT) { // Joystick w prawo
 			edit_position = (uint8_t)((edit_position + (uint8_t)(1)) % (uint8_t)(3));
-		} else if (joystick_state & JOYSTICK_LEFT) { // Joystick w prawo
+		} else { // Joystick w prawo
 			edit_position = (uint8_t)((edit_position - (uint8_t)(1)) % (uint8_t)(3));
 		}
 		if (!edit_position) {
@@ -286,13 +280,13 @@ static void setNewTime(uint8_t * time) {
 		else if (edit_position == (uint8_t)(1)) {
 			position = 'm';
 		}
-		else if (edit_position == (uint8_t)(2)) {
+		else {
 			position = 's';
 		}
 
-		snprintf(buff, sizeof(buff), "Ustaw: %02d:%02d:%02d", g, m, s);
-		oled_putString(1, 20, (uint8_t *) buff, foreground, background);
-		oled_putChar(69, 30, position, foreground, background);
+		print_value = snprintf(buff, sizeof(buff), "Ustaw: %02d:%02d:%02d", g, m, s);
+		oled_putString(1, 20, (const uint8_t *) buff, foreground, background);
+		oled_putChar(69, 30, (uint8_t) position, foreground, background);
 		set_time = joystick_read() & JOYSTICK_CENTER;
 		Timer0_Wait(50);
 	}
@@ -302,11 +296,11 @@ static void setNewTime(uint8_t * time) {
 	oled_clearScreen(background);
 }
 
-static void setTime() {
+static void setTime(void) {
 	uint8_t time[] = {RTC_GetTime(LPC_RTC, RTC_TIMETYPE_HOUR), RTC_GetTime(LPC_RTC, RTC_TIMETYPE_MINUTE), RTC_GetTime(LPC_RTC, RTC_TIMETYPE_SECOND)};
 	oled_clearScreen(background);
-	oled_putString(1, 1, (uint8_t *) "Czas:", foreground, background);
-	oled_putString(1, 30, (uint8_t *) "Zmieniasz: ", foreground, background);
+	oled_putString(1, 1, (const uint8_t *) "Czas:", foreground, background);
+	oled_putString(1, 30, (const uint8_t *) "Zmieniasz: ", foreground, background);
 	setNewTime(time);
 	RTC_TIME_Type RTCFullTime;
 	RTCFullTime.HOUR = time[0];
@@ -317,11 +311,11 @@ static void setTime() {
 
 }
 
-static void setAlarm() {
+static void setAlarm(void) {
 	uint8_t time[]= {alarm_godziny, alarm_minuty, alarm_sekundy};
 	oled_clearScreen(background);
-	oled_putString(1, 1, (uint8_t *) "Alarm:", foreground, background);
-	oled_putString(1, 30, (uint8_t *) "Zmieniasz: ", foreground, background);
+	oled_putString(1, 1, (const uint8_t *) "Alarm:", foreground, background);
+	oled_putString(1, 30, (const uint8_t *) "Zmieniasz: ", foreground, background);
 	setNewTime(time);
 	alarm_godziny = time[0];
 	alarm_minuty = time[1];
@@ -334,20 +328,20 @@ static void handle_joystick(void) {
     //uint8_t joystick_state = GPIO_ReadValue(1);
 	uint8_t joystick_state;
 	uint8_t read_position =  joystick_read();
-	if (!read_position){
-		return;
+	if (read_position == (uint8_t) 1) {
+		joystick_state = read_position;
+		if(joystick_state == JOYSTICK_CENTER){
+			edit_mode ^= true;
+		}
+		if (edit_mode) {
+			if (joystick_state & JOYSTICK_RIGHT) { // Joystick w prawo ustawnianie czasu
+				setTime();
+			} 
+			if (joystick_state & JOYSTICK_LEFT) { // Joystick w lewo ustawianie alarmu
+				setAlarm();
+			} 
+		}
 	}
-	joystick_state = read_position;
-	if(joystick_state == JOYSTICK_CENTER){
-		edit_mode ^= 1;
-	}
-	if (edit_mode) {
-		if (joystick_state & JOYSTICK_RIGHT) { // Joystick w prawo ustawnianie czasu
-			setTime();
-		} else if (joystick_state & JOYSTICK_LEFT) { // Joystick w lewo ustawianie alarmu
-			setAlarm();
-		} 
-    }
 }
 
 /* Inicjalizacja RTC */
@@ -390,7 +384,7 @@ static void saveAlarmToEEPROM(uint8_t hours,  uint8_t minutes, uint8_t seconds) 
 	eeprom_write(buf, 3, 3);
 }
 
-static void readAlarmFromEEPROM() {
+static void readAlarmFromEEPROM(void) {
 	uint8_t buf[3];
 	eeprom_read(buf, 3, 3);
 	alarm_godziny = buf[0];
@@ -498,15 +492,15 @@ static void playNote(uint32_t note, uint32_t durationMs) {
 
     uint32_t t = 0;
 
-    if (note > 0) {
+    if (note > (uint8_t) 0) {
 
-        while (t < (durationMs*1000)) {
+        while (t < (durationMs*(uint32_t)1000)) {
             NOTE_PIN_HIGH();
-            Timer0_us_Wait(note / 2);
+            Timer0_us_Wait(note / (uint32_t) 2);
             //delay32Us(0, note / 2);
 
             NOTE_PIN_LOW();
-            Timer0_us_Wait(note / 2);
+            Timer0_us_Wait(note / (uint32_t) 2);
             //delay32Us(0, note / 2);
 
             t += note;
@@ -520,37 +514,48 @@ static void playNote(uint32_t note, uint32_t durationMs) {
 }
 
 static uint32_t getNote(uint8_t ch) {
-    if (ch >= 'A' && ch <= 'G')
-        return notes[ch - 'A'];
-
-    if (ch >= 'a' && ch <= 'g')
-        return notes[ch - 'a' + 7];
-
-    return 0;
+	uint32_t result = 0;
+    if ((ch >= (uint8_t) 'A') && (ch <= (uint8_t) 'G')) {
+        result = notes[ch - (uint8_t) 'A'];
+	}
+    if ((ch >= (uint8_t) 'a') && (ch <= (uint8_t) 'g')) {
+        result = notes[ch - (uint8_t) 'a' + (uint8_t) 7];
+	}
+    return result;
 }
 
-static uint32_t getDuration(uint8_t ch) {
-    if (ch < '0' || ch > '9')
-        return 400;
-
+static uint32_t getDuration(uint8_t ch) {\
+	uint32_t result;
+    if ((ch < (uint8_t) '0') || (ch > (uint8_t) '9')) {
+        result = 400;
+	} else {
+		result = (ch - (uint32_t) '0') * (uint32_t)  200;
+	}
     /* number of ms */
 
-    return (ch - '0') * 200;
+    return result;
 }
 
 static uint32_t getPause(uint8_t ch) {
+	uint32_t result;
     switch (ch) {
     case '+':
-        return 0;
+        result = 0;
+		break;
     case ',':
-        return 5;
+        result = 5;
+		break;
     case '.':
-        return 20;
+        result = 20;
+		break;
     case '_':
-        return 30;
+        result = 30;
+		break;
     default:
-        return 5;
+        result = 5;
+		break;
     }
+	return result;
 }
 
 static void playSong(uint8_t *song) {
@@ -567,11 +572,13 @@ static void playSong(uint8_t *song) {
 
     while(*song != '\0') {
         note = getNote(*song++);
-        if (*song == '\0')
+        if (*song == '\0') {
             break;
-        dur  = getDuration(*song++);
-        if (*song == '\0')
+		}
+        dur  = getDuration(*son++);
+        if (*song == '\0') {
             break;
+		}
         pause = getPause(*song++);
 
         playNote(note, dur);
@@ -594,5 +601,5 @@ void check_failed(uint8_t *file, uint32_t line) {
 	 ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
 
 	/* Infinite loop */
-	while(1);
+	while(1) {}
 }

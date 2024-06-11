@@ -5,14 +5,14 @@
  *   All rights reserved.
  *
  ******************************************************************************/
-
-#include "lpc17xx_pinsel.h"
+#include "lpc17xx_adc.h"
 #include "lpc17xx_gpio.h"
 #include "lpc17xx_i2c.h"
-#include "lpc17xx_ssp.h"
-#include "lpc17xx_adc.h"
-#include "lpc17xx_timer.h"
+#include "lpc17xx_pinsel.h"
 #include "lpc17xx_rtc.h"
+#include "lpc17xx_ssp.h"
+#include "lpc17xx_timer.h"
+
 
 #include "acc.h"
 #include "eeprom.h"
@@ -20,6 +20,7 @@
 #include "light.h"
 #include "oled.h"
 #include "temp.h"
+
 
 #define NOTE_PIN_HIGH() GPIO_SetValue(0, 1<<26);
 #define NOTE_PIN_LOW()  GPIO_ClearValue(0, 1<<26);
@@ -49,8 +50,6 @@ static void readAlarmFromEEPROM(void);
 void SysTick_Handler(void);
 uint32_t getTicks(void);
 
-void check_failed(uint8_t *file, uint32_t line);
-
 static uint32_t notes[] = {
         2272, // A - 440 Hz
         2024, // B - 494 Hz
@@ -69,24 +68,19 @@ static uint32_t notes[] = {
 };
 
 static uint8_t * song = (uint8_t*)"C2.C2,D4,C4,F4,E8,";
-        //(uint8_t*)"C2.C2,D4,C4,F4,E8,C2.C2,D4,C4,G4,F8,C2.C2,c4,A4,F4,E4,D4,A2.A2,H4,F4,G4,F8,";
-        //"D4,B4,B4,A4,A4,G4,E4,D4.D2,E4,E4,A4,F4,D8.D4,d4,d4,c4,c4,B4,G4,E4.E2,F4,F4,A4,A4,G8,";
-
-
-
 
 /* Zmienne do przechowywania czasu budzika */
 static uint8_t alarm_godziny = 4;
 static uint8_t alarm_minuty = 20;
 static uint8_t alarm_sekundy = 4;
 
+static uint8_t edit_mode = 0;
 
-static bool edit_mode = false;
-
-volatile uint32_t msTicks; /* counts 1ms timeTicks */
+static uint32_t msTicks; /* counts 1ms timeTicks */
 
 static oled_color_t background = OLED_COLOR_BLACK;
 static oled_color_t foreground = OLED_COLOR_WHITE;
+static uint8_t print_value;
 
 /*
 	OLED							+
@@ -105,10 +99,10 @@ static oled_color_t foreground = OLED_COLOR_WHITE;
 
 int main (void) {
 	uint32_t lux_value;
-	bool prev_mode = false;
+	uint8_t prev_mode = 0;
 	uint8_t prev_light = 0;
 	uint8_t light_change = 0;
-	uint8_t print_value;
+
 	int32_t temperature;
 	const int8_t MARGIN = 5;
 
@@ -126,6 +120,8 @@ int main (void) {
     setUpRTC();
 
     light_init();
+    light_setRange(LIGHT_RANGE_4000);
+    light_setMode(LIGHT_MODE_D2);
     light_enable();
 
     readAlarmFromEEPROM();
@@ -145,7 +141,7 @@ int main (void) {
 
     while (1) {
     	lux_value = light_read();
-    	if (lux_value < (uint32_t) 200) {
+    	if (lux_value < (uint32_t) 20) {
     		background = OLED_COLOR_WHITE;
     		foreground = OLED_COLOR_BLACK;
     		light_change = 1;
@@ -163,16 +159,11 @@ int main (void) {
 			prev_mode = edit_mode;
 		}
 		if (!edit_mode) {
-			// W normalnym trybie wyświetlania czasu
-			// Read and display temperature
 			if (!(msTicks % (uint8_t) 10))
 			{
 				temperature = temp_read();
 			}
 
-			// godziny = RTC_GetTime(LPC_RTC, RTC_TIMETYPE_HOUR);
-			// minuty = RTC_GetTime(LPC_RTC, RTC_TIMETYPE_MINUTE);
-			// sekundy = RTC_GetTime(LPC_RTC, RTC_TIMETYPE_SECOND);
 
 			char temperatura[20];
 			print_value = snprintf(temperatura, sizeof(temperatura), "Temp: %d.%d", (int8_t) (temperature / 10), (int8_t) (temperature % 10));
@@ -223,14 +214,14 @@ int main (void) {
 				zdiff = (int8_t) (zoff - z);
 //				btn1 = ((GPIO_ReadValue(0) >> 4) & 0x01);
 				if(!((-MARGIN < xdiff) && (xdiff < MARGIN) && (-MARGIN < ydiff) && (ydiff < MARGIN) && (-MARGIN < zdiff) && (zdiff < MARGIN))) {
-					edit_mode = false;
-					prev_mode = true;
+					edit_mode = 0;
+					prev_mode = 1;
 					break;
 				}
 			}
 		}
 		handle_joystick(); // Obsługa joysticka
-//        Timer0_Wait(1);
+		Timer0_us_Wait(50);
     }
 
 }
@@ -271,9 +262,10 @@ static void setNewTime(uint8_t * time) {
 			}
 		} else if (joystick_state & JOYSTICK_RIGHT) { // Joystick w prawo
 			edit_position = (uint8_t)((edit_position + (uint8_t)(1)) % (uint8_t)(3));
-		} else { // Joystick w prawo
+		} else if (joystick_state & JOYSTICK_LEFT) { // Joystick w prawo
 			edit_position = (uint8_t)((edit_position - (uint8_t)(1)) % (uint8_t)(3));
-		}
+		} else {}
+
 		if (!edit_position) {
 			position = 'g';
 		}
@@ -328,21 +320,23 @@ static void handle_joystick(void) {
     //uint8_t joystick_state = GPIO_ReadValue(1);
 	uint8_t joystick_state;
 	uint8_t read_position =  joystick_read();
-	if (read_position == (uint8_t) 1) {
-		joystick_state = read_position;
-		if(joystick_state == JOYSTICK_CENTER){
-			edit_mode ^= true;
+	if (!read_position){
+		return;
+	}
+	joystick_state = read_position;
+	if(joystick_state == JOYSTICK_CENTER){
+		edit_mode ^= 1;
+	}
+	if (edit_mode) {
+		if (joystick_state & JOYSTICK_RIGHT) { // Joystick w prawo ustawnianie czasu
+			setTime();
 		}
-		if (edit_mode) {
-			if (joystick_state & JOYSTICK_RIGHT) { // Joystick w prawo ustawnianie czasu
-				setTime();
-			} 
-			if (joystick_state & JOYSTICK_LEFT) { // Joystick w lewo ustawianie alarmu
-				setAlarm();
-			} 
+		if (joystick_state & JOYSTICK_LEFT) { // Joystick w lewo ustawianie alarmu
+			setAlarm();
 		}
 	}
 }
+
 
 /* Inicjalizacja RTC */
 static void setUpRTC(void) {
@@ -575,7 +569,7 @@ static void playSong(uint8_t *song) {
         if (*song == '\0') {
             break;
 		}
-        dur  = getDuration(*son++);
+        dur  = getDuration(*song++);
         if (*song == '\0') {
             break;
 		}
@@ -594,12 +588,4 @@ void SysTick_Handler(void) {
 
 uint32_t getTicks(void) {
     return msTicks;
-}
-
-void check_failed(uint8_t *file, uint32_t line) {
-	/* User can add his own implementation to report the file name and line number,
-	 ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
-
-	/* Infinite loop */
-	while(1) {}
 }

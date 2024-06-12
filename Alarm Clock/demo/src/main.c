@@ -1,10 +1,3 @@
-/*****************************************************************************
- *   A demo example using several of the peripherals on the base board
- *
- *   Copyright(C) 2010, Embedded Artists AB
- *   All rights reserved.
- *
- ******************************************************************************/
 #include "lpc17xx_adc.h"
 #include "lpc17xx_gpio.h"
 #include "lpc17xx_i2c.h"
@@ -82,21 +75,12 @@ static oled_color_t background = OLED_COLOR_BLACK;
 static oled_color_t foreground = OLED_COLOR_WHITE;
 static uint8_t print_value;
 
-/*
-	OLED							+
-	Zegar RTC						+
-	Timer							+
-	Głośnik/dźwięk					+0.5
-	GPIO joystick					+
-	I2c i/f do 5					+
-	Akcelerometr gasi alarm (i2c) 	+
-	Termometr (czujnik)				+0.5
-	Eeprom do zapisu alarmu			+
-	Dodatkowo:
-	Luxometr						+
-
-*/
-
+/*!
+ *  @brief Główna funkcja programu
+ *  @param brak
+ *  @returns  nic
+ *  @side effects wszystkie funkcje obsługujące sprzęt i logikę programu
+ */
 int main (void) {
 	uint32_t lux_value;
 	uint8_t prev_mode = 0;
@@ -125,7 +109,6 @@ int main (void) {
     light_enable();
 
     readAlarmFromEEPROM();
-
 
     if (SysTick_Config(SystemCoreClock / 1000)) {
 		while(1) {
@@ -163,7 +146,6 @@ int main (void) {
 			{
 				temperature = temp_read();
 			}
-
 
 			char temperatura[20];
 			print_value = snprintf(temperatura, sizeof(temperatura), "Temp: %d.%d", (int8_t) (temperature / 10), (int8_t) (temperature % 10));
@@ -212,7 +194,6 @@ int main (void) {
 				xdiff = (int8_t) (xoff - x);
 				ydiff = (int8_t) (yoff - y);
 				zdiff = (int8_t) (zoff - z);
-//				btn1 = ((GPIO_ReadValue(0) >> 4) & 0x01);
 				if(!((-MARGIN < xdiff) && (xdiff < MARGIN) && (-MARGIN < ydiff) && (ydiff < MARGIN) && (-MARGIN < zdiff) && (zdiff < MARGIN))) {
 					edit_mode = 0;
 					prev_mode = 1;
@@ -220,21 +201,23 @@ int main (void) {
 				}
 			}
 		}
-		handle_joystick(); // Obsługa joysticka
+		handle_joystick();
 		Timer0_us_Wait(50);
     }
 
 }
 
+/*! Funkcja do ustawiania nowego czasu
+ * @param time - wskaźnik do tablicy z czasem
+ * @returns nic
+ * @side effects ustawiania czasu joystickiem i wyświetlanie na ekranie
+ */
 static void setNewTime(uint8_t * time) {
 	uint8_t set_time = 0;
 	uint8_t edit_position = 0;
 	uint8_t joystick_state;
 	char buff[20];
 	char position;
-	// uint8_t g = RTC_GetTime(LPC_RTC, RTC_TIMETYPE_HOUR);
-	// uint8_t m = RTC_GetTime(LPC_RTC, RTC_TIMETYPE_MINUTE);
-	// uint8_t s = RTC_GetTime(LPC_RTC, RTC_TIMETYPE_SECOND);
 	uint8_t g = time[0];
 	uint8_t m = time[1];
 	uint8_t s = time[2];
@@ -262,7 +245,7 @@ static void setNewTime(uint8_t * time) {
 			}
 		} else if (joystick_state & JOYSTICK_RIGHT) { // Joystick w prawo
 			edit_position = (uint8_t)((edit_position + (uint8_t)(1)) % (uint8_t)(3));
-		} else if (joystick_state & JOYSTICK_LEFT) { // Joystick w prawo
+		} else if (joystick_state & JOYSTICK_LEFT) { // Joystick w lewo
 			edit_position = (uint8_t)((edit_position - (uint8_t)(1)) % (uint8_t)(3));
 		} else {}
 
@@ -288,6 +271,11 @@ static void setNewTime(uint8_t * time) {
 	oled_clearScreen(background);
 }
 
+/*! Funkcja do ustawiania czasu
+ * @param brak
+ * @returns nic
+ * @side effects zmiana czasu RTC
+ */
 static void setTime(void) {
 	uint8_t time[] = {RTC_GetTime(LPC_RTC, RTC_TIMETYPE_HOUR), RTC_GetTime(LPC_RTC, RTC_TIMETYPE_MINUTE), RTC_GetTime(LPC_RTC, RTC_TIMETYPE_SECOND)};
 	oled_clearScreen(background);
@@ -300,9 +288,13 @@ static void setTime(void) {
 	RTCFullTime.SEC = time[2];
 	RTC_SetFullTime(LPC_RTC, &RTCFullTime);
 	saveTimeToEEPROM(&RTCFullTime);
-
 }
 
+/*! Funkcja do ustawiania alarmu
+ * @param brak
+ * @returns nic
+ * @side effects zmiana czasu alarmu
+ */
 static void setAlarm(void) {
 	uint8_t time[]= {alarm_godziny, alarm_minuty, alarm_sekundy};
 	oled_clearScreen(background);
@@ -315,9 +307,12 @@ static void setAlarm(void) {
 	saveAlarmToEEPROM(alarm_godziny, alarm_minuty, alarm_sekundy);
 }
 
-/* Funkcja do obsługi joysticka */
+/*! Funkcja do obsługi joysticka
+ * @param brak
+ * @returns nic
+ * @side effects zmiana trybu pracy
+ */
 static void handle_joystick(void) {
-    //uint8_t joystick_state = GPIO_ReadValue(1);
 	uint8_t joystick_state;
 	uint8_t read_position =  joystick_read();
 	if (!read_position){
@@ -338,7 +333,12 @@ static void handle_joystick(void) {
 }
 
 
-/* Inicjalizacja RTC */
+/*!
+ *  @brief Funkcja inicjalizująca RTC
+ *  @param brak
+ *  @returns  nic
+ *  @side effects konfiguracja RTC
+ */
 static void setUpRTC(void) {
 
     RTC_Init(LPC_RTC);
@@ -354,6 +354,12 @@ static void setUpRTC(void) {
     saveTimeToEEPROM(&RTCFullTime);
 }
 
+/*!
+ *  @brief Funkcja zapisująca czas do EEPROM
+ *  @param rtc - wskaźnik do struktury z czasem
+ *  @returns  nic
+ *  @side effects zapisuje czas do EEPROM
+ */
 static void saveTimeToEEPROM(const RTC_TIME_Type *rtc) {
 	uint8_t buf[3];
 	buf[0] = rtc->SEC;
@@ -362,6 +368,12 @@ static void saveTimeToEEPROM(const RTC_TIME_Type *rtc) {
 	eeprom_write(buf, 0, 3);
 }
 
+/*!
+ *  @brief Funkcja odczytująca czas z EEPROM
+ *  @param rtc - wskaźnik do struktury z czasem
+ *  @returns  nic
+ *  @side effects odczytuje czas z EEPROM
+ */
 static void readTimeFromEEPROM(RTC_TIME_Type *rtc) {
 	uint8_t buf[3];
 	eeprom_read(buf, 0, 3);
@@ -370,6 +382,14 @@ static void readTimeFromEEPROM(RTC_TIME_Type *rtc) {
 	rtc->HOUR = buf[2];
 }
 
+/*!
+ *  @brief Funkcja zapisująca alarm do EEPROM
+ *  @param hours - godziny
+ *  @param minutes - minuty
+ *  @param seconds - sekundy
+ *  @returns  nic
+ *  @side effects zapisuje alarm do EEPROM
+ */
 static void saveAlarmToEEPROM(uint8_t hours,  uint8_t minutes, uint8_t seconds) {
 	uint8_t buf[3];
 	buf[0] = hours;
@@ -378,6 +398,12 @@ static void saveAlarmToEEPROM(uint8_t hours,  uint8_t minutes, uint8_t seconds) 
 	eeprom_write(buf, 3, 3);
 }
 
+/*!
+ *  @brief Funkcja odczytująca alarm z EEPROM
+ *  @param brak
+ *  @returns  nic
+ *  @side effects odczytuje alarm z EEPROM
+ */
 static void readAlarmFromEEPROM(void) {
 	uint8_t buf[3];
 	eeprom_read(buf, 3, 3);
@@ -386,6 +412,12 @@ static void readAlarmFromEEPROM(void) {
 	alarm_sekundy = buf[2];
 }
 
+/*!
+ *  @brief Funkcja inicjalizująca SSP
+ *  @param brak
+ *  @returns  nic
+ *  @side effects funkcja ustawia piny
+ */
 static void init_ssp(void) {
 	SSP_CFG_Type SSP_ConfigStruct;
 	PINSEL_CFG_Type PinCfg;
@@ -422,6 +454,12 @@ static void init_ssp(void) {
 
 }
 
+/*!
+ *  @brief Funkcja inicjalizująca I2C
+ *  @param brak
+ *  @returns  nic
+ *  @side effects funkcja ustawia piny
+ */
 static void init_i2c(void) {
 	PINSEL_CFG_Type PinCfg;
 
@@ -440,6 +478,12 @@ static void init_i2c(void) {
 	I2C_Cmd(LPC_I2C2, ENABLE);
 }
 
+/*!
+ *  @brief Funkcja inicjalizująca ADC
+ *  @param brak
+ *  @returns  nic
+ *  @side effects funkcja ustawia piny
+ */
 static void init_adc(void) {
 	PINSEL_CFG_Type PinCfg;
 
@@ -461,12 +505,16 @@ static void init_adc(void) {
 	ADC_Init(LPC_ADC, 200000);
 	ADC_IntConfig(LPC_ADC,ADC_CHANNEL_0,DISABLE);
 	ADC_ChannelCmd(LPC_ADC,ADC_CHANNEL_0,ENABLE);
-
 }
 
+/*!
+ *  @brief Funkcja inicjalizująca głośnik
+ *  @param brak
+ *  @returns  nic
+ *  @side effects funkcja ustawia piny
+ */
 static void init_speaker(void) {
     /* ---- Speaker ------> */
-
 
     GPIO_SetDir(2, 1<<0, 1);
     GPIO_SetDir(2, 1<<1, 1);
@@ -482,6 +530,13 @@ static void init_speaker(void) {
     /* <---- Speaker ------ */
 }
 
+/*!
+ *  @brief Funkcja odtwarzająca nutę
+ *  @param note - nuta
+ *  @param durationMs - czas trwania nuty
+ *  @returns  nic
+ *  @side effects brak
+ */
 static void playNote(uint32_t note, uint32_t durationMs) {
 
     uint32_t t = 0;
@@ -507,6 +562,12 @@ static void playNote(uint32_t note, uint32_t durationMs) {
     }
 }
 
+/*!
+ *  @brief Funkcja zwracająca nutę
+ *  @param ch - znak określający nutę
+ *  @returns  nuta
+ *  @side effects brak
+ */
 static uint32_t getNote(uint8_t ch) {
 	uint32_t result = 0;
     if ((ch >= (uint8_t) 'A') && (ch <= (uint8_t) 'G')) {
@@ -518,6 +579,12 @@ static uint32_t getNote(uint8_t ch) {
     return result;
 }
 
+/*!
+ *  @brief Funkcja zwracająca czas trwania nuty
+ *  @param ch - znak określający czas trwania nuty
+ *  @returns  czas trwania nuty
+ *  @side effects brak
+ */
 static uint32_t getDuration(uint8_t ch) {\
 	uint32_t result;
     if ((ch < (uint8_t) '0') || (ch > (uint8_t) '9')) {
@@ -530,6 +597,12 @@ static uint32_t getDuration(uint8_t ch) {\
     return result;
 }
 
+/*!
+ *  @brief Funkcja zwracająca czas pauzy
+ *  @param ch - znak określający czas pauzy
+ *  @returns  czas pauzy
+ *  @side effects brak
+ */
 static uint32_t getPause(uint8_t ch) {
 	uint32_t result;
     switch (ch) {
@@ -552,6 +625,12 @@ static uint32_t getPause(uint8_t ch) {
 	return result;
 }
 
+/*!
+ *  @brief Funkcja odtwarzająca melodię
+ *  @param song - wskaźnik do tablicy z melodią
+ *  @returns  nic
+ *  @side effects brak
+ */
 static void playSong(uint8_t *song) {
     uint32_t note = 0;
     uint32_t dur  = 0;
@@ -576,16 +655,26 @@ static void playSong(uint8_t *song) {
         pause = getPause(*song++);
 
         playNote(note, dur);
-        //delay32Ms(0, pause);
         Timer0_Wait(pause);
-
     }
 }
 
+/*!
+ *  @brief Funkcja obsługująca przerwanie od zegara systemowego
+ *  @param brak
+ *  @returns  nic
+ *  @side effects zwiększa liczbę milisekundowych tyknięć
+ */
 void SysTick_Handler(void) {
     msTicks++;
 }
 
+/*!
+ *  @brief Funkcja zwracająca czas zegara systemowego
+ *  @param brak
+ *  @returns  czas zegara systemowego
+ *  @side effects brak
+ */
 uint32_t getTicks(void) {
     return msTicks;
 }

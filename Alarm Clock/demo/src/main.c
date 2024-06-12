@@ -159,7 +159,7 @@ int main (void) {
 			oled_putString(1, 50, (const uint8_t *) czas, foreground, background);
 
 		} else {
-			// W menu ustawiania budzika
+			/* W menu ustawiania budzika */
 			oled_putString(1, 1, (const uint8_t *) "Ustaw czas:", foreground, background);
 			char czas[20];
 			print_value = snprintf(czas, sizeof(czas), "Czas: %02d:%02d:%02d", (uint8_t) RTC_GetTime(LPC_RTC, RTC_TIMETYPE_HOUR), (uint8_t) RTC_GetTime(LPC_RTC, RTC_TIMETYPE_MINUTE), (uint8_t) RTC_GetTime(LPC_RTC, RTC_TIMETYPE_SECOND));
@@ -170,10 +170,10 @@ int main (void) {
 			oled_putString(1, 40, (const uint8_t *) "L - alarm", foreground, background);
 			oled_putString(1, 50, (const uint8_t *) "R - zegar", foreground, background);
 		}
-		// Sprawdzenie, czy aktualny czas odpowiada czasowi budzika
+		/* Sprawdzenie, czy aktualny czas odpowiada czasowi budzika */
 		if ((RTC_GetTime(LPC_RTC, RTC_TIMETYPE_HOUR) == alarm_godziny) && (RTC_GetTime(LPC_RTC, RTC_TIMETYPE_MINUTE) == alarm_minuty) && (RTC_GetTime(LPC_RTC, RTC_TIMETYPE_SECOND) == alarm_sekundy)) {
-			// Wywołanie alarmu
-			// accelerometr coordynaty
+			/* Wywołanie alarmu
+			   accelerometr coordynaty */
 			int8_t x;
 			int8_t y;
 			int8_t z;
@@ -223,7 +223,7 @@ static void setNewTime(uint8_t * time) {
 	uint8_t s = time[2];
 	while (!set_time) {
 		joystick_state = joystick_read();
-		if (joystick_state & JOYSTICK_UP) { // Joystick w górę
+		if (joystick_state & JOYSTICK_UP) {
 			if (!edit_position) {
 				g = (uint8_t)((g + (uint8_t)(1)) % (uint8_t)(24));
 			}
@@ -233,7 +233,7 @@ static void setNewTime(uint8_t * time) {
 			else {
 				s = (uint8_t)((s + (uint8_t)(1)) % (uint8_t)(60));
 			}
-		} else if (joystick_state & JOYSTICK_DOWN) { // Joystick w dół
+		} else if (joystick_state & JOYSTICK_DOWN) {
 			if (!edit_position) {
 				g = (g == (uint8_t)(0)) ? (uint8_t)(23) : (uint8_t) (g - (uint8_t)(1));
 			}
@@ -243,9 +243,9 @@ static void setNewTime(uint8_t * time) {
 			else {
 				s = (s == (uint8_t)(0)) ? (uint8_t)(59) : (uint8_t) (s - (uint8_t)(1));
 			}
-		} else if (joystick_state & JOYSTICK_RIGHT) { // Joystick w prawo
+		} else if (joystick_state & JOYSTICK_RIGHT) {
 			edit_position = (uint8_t)((edit_position + (uint8_t)(1)) % (uint8_t)(3));
-		} else if (joystick_state & JOYSTICK_LEFT) { // Joystick w lewo
+		} else if (joystick_state & JOYSTICK_LEFT) {
 			edit_position = (uint8_t)((edit_position - (uint8_t)(1)) % (uint8_t)(3));
 		} else {}
 
@@ -323,10 +323,10 @@ static void handle_joystick(void) {
 		edit_mode ^= 1;
 	}
 	if (edit_mode) {
-		if (joystick_state & JOYSTICK_RIGHT) { // Joystick w prawo ustawnianie czasu
+		if (joystick_state & JOYSTICK_RIGHT) {
 			setTime();
 		}
-		if (joystick_state & JOYSTICK_LEFT) { // Joystick w lewo ustawianie alarmu
+		if (joystick_state & JOYSTICK_LEFT) {
 			setAlarm();
 		}
 	}
@@ -446,10 +446,10 @@ static void init_ssp(void) {
 
 	SSP_ConfigStructInit(&SSP_ConfigStruct);
 
-	// Initialize SSP peripheral with parameter given in structure above
+	/* Initialize SSP peripheral with parameter given in structure above */
 	SSP_Init(LPC_SSP1, &SSP_ConfigStruct);
 
-	// Enable SSP peripheral
+	/* Enable SSP peripheral */
 	SSP_Cmd(LPC_SSP1, ENABLE);
 
 }
@@ -471,7 +471,7 @@ static void init_i2c(void) {
 	PinCfg.Pinnum = 11;
 	PINSEL_ConfigPin(&PinCfg);
 
-	// Initialize I2C peripheral
+	/* Initialize I2C peripheral */
 	I2C_Init(LPC_I2C2, 100000);
 
 	/* Enable I2C1 operation */
@@ -524,9 +524,9 @@ static void init_speaker(void) {
     GPIO_SetDir(2, 1<<13, 1);
     GPIO_SetDir(0, 1<<26, 1);
 
-    GPIO_ClearValue(0, 1<<27); //LM4811-clk
-    GPIO_ClearValue(0, 1<<28); //LM4811-up/dn
-    GPIO_ClearValue(2, 1<<13); //LM4811-shutdn
+    GPIO_ClearValue(0, 1<<27); /* LM4811-clk */
+    GPIO_ClearValue(0, 1<<28); /* LM4811-up/dn */
+    GPIO_ClearValue(2, 1<<13); /* LM4811-shutdn */
     /* <---- Speaker ------ */
 }
 
@@ -546,11 +546,9 @@ static void playNote(uint32_t note, uint32_t durationMs) {
         while (t < (durationMs*(uint32_t)1000)) {
             NOTE_PIN_HIGH();
             Timer0_us_Wait(note / (uint32_t) 2);
-            //delay32Us(0, note / 2);
 
             NOTE_PIN_LOW();
             Timer0_us_Wait(note / (uint32_t) 2);
-            //delay32Us(0, note / 2);
 
             t += note;
         }
@@ -558,7 +556,6 @@ static void playNote(uint32_t note, uint32_t durationMs) {
     }
     else {
     	Timer0_Wait(durationMs);
-        //delay32Ms(0, durationMs);
     }
 }
 
